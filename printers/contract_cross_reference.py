@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections import deque
+from collections import deque, defaultdict
 from pathlib import Path
 from typing import List, Set, Tuple
 
 import networkx as nx
 import rich_click as click
 from rich import print
+import rich.tree
 
 import wake.ir as ir
 import wake.ir.types as types
@@ -18,178 +19,195 @@ import re
 
 class ContractCrossReferencePrinter(Printer):
     # _names: Set[str]
-    _out: Path
-    _direction: str
-    _links: bool
-    _force: bool
-    _single_file: bool
-    _children: bool
-    _parents: bool
-    _interfaces: bool
+    _inherit: bool
     _contracts: List[ir.ContractDefinition]
-    # _references: Dict[str, ]
-    # _function_calls: List[ir.FunctionCall]
-
-    # _import_directives: List[ir.ImportDirective]
-    # _visit_identifier_path: List[ir.IdentifierPath]
 
     def __init__(self):
         self._contracts = []
 
+    def find_ContractDefinition(self, node: ir.SolidityAbc): 
+        while node is not None:
+            if isinstance(node, ir.InheritanceSpecifier) and not self._inherit:
+                return None                          
+            if isinstance(node, ir.ContractDefinition):
+                return node
+            if isinstance(node, ir.SourceUnit):
+                return None
+            node = node.parent
+
 
     def print(self) -> None:
+        # for node in self._contracts:
+        #     print("-------------------")
+        #     print(node.name)
+        #     identifiers: List[ir.Identifier] = [id for id in node.references if isinstance(id, ir.Identifier)]
 
-        for node in self._contracts:
-            print("-------------------")
-            print(node.name)
-            identifiers: List[ir.Identifier] = [id for id in node.references if isinstance(id, ir.Identifier)]
-
-            for id in identifiers:
-                if isinstance(id, ir.ExpressionAbc) and id.statement is not None: # reference is ExpressionAbc and statement is not none
-                    current_node: ir.ExpressionAbc = id
-                        # print(current_node.statement.declaration.parent)
-                    if isinstance(current_node.statement.declaration.parent, ir.ContractDefinition):
-                        print(current_node.statement.declaration.parent.name)
-                    # else:
-                        # print("the function is not in the contract ... skip")
-                else:
-                    current_node: ir.SolidityAbc = id
-                    while current_node is not None:
-                        if isinstance(current_node, ir.ContractDefinition):
-                            contract_def:ir.ContractDefinition = current_node
-                            print(contract_def.name)
-                            break
-                        current_node = current_node.parent
-
-
-            identifier_paths : List[ir.IdentifierPathPart] = [id for id in node.references if isinstance(id, ir.IdentifierPathPart)]
-            for pp in identifier_paths:
-                current_node: ir.SolidityAbc = pp.underlying_node # always it is not ExpressionAbc
-                while current_node is not None:
-                    if isinstance(current_node, ir.ContractDefinition):
-                        contract_def:ir.ContractDefinition = current_node
-                        print(contract_def.name)
-                        break
-                    current_node = current_node.parent            
+        #     for id in identifiers:
+        #         if isinstance(id, ir.ExpressionAbc) and id.statement is not None: # reference is ExpressionAbc and statement is not none
+        #             current_node: ir.ExpressionAbc = id
+        #                 # print(current_node.statement.declaration.parent)
+        #             if isinstance(current_node.statement.declaration.parent, ir.ContractDefinition):
+        #                 print(" - ", current_node.statement.declaration.parent.name)
+        #             # else:
+        #                 # print("the function is not in the contract ... skip")
+        #         else:
+        #             current_node: ir.SolidityAbc = id
+        #             while current_node is not None:
+        #                 if isinstance(current_node, ir.ContractDefinition):
+        #                     contract_def:ir.ContractDefinition = current_node
+        #                     print(" - ", contract_def.name)
+        #                     break
+        #                 current_node = current_node.parent
 
 
+        #     identifier_paths : List[ir.IdentifierPathPart] = [id for id in node.references if isinstance(id, ir.IdentifierPathPart)]
+        #     for pp in identifier_paths:
+        #         current_node: ir.SolidityAbc = pp.underlying_node # always it is not ExpressionAbc
+        #         while current_node is not None:
+        #             if isinstance(current_node, ir.ContractDefinition):
+        #                 contract_def:ir.ContractDefinition = current_node
+        #                 print(" - ", contract_def.name)
+        #                 break
+        #             current_node = current_node.parent            
 
-        
-        import graphviz as gv
 
-        # if not self._force and self._out.exists():
-        #     self.logger.warning(f"File {self._out} already exists, skipping")
-        #     return
-        
+# ---------------------------------------
 
-        g = gv.Digraph("Contract cross reference")
-        g.attr(rankdir=self._direction)
-        g.attr("node", shape="box")
+
+        for name in self._names:
+            print(name)
+            
+        from rich.tree import Tree
 
         edges: Set[Tuple[str, str]] = set()
+        nodes: Set[Tuple[str, str, str]] = set()
+        # contract_id, contract_name, URL(contract_source)
 
         for contract in self._contracts:
-            g.node(f"{contract.parent.source_unit_name}_{contract.name}", contract.name)
+            node_tuple = (f"{contract.parent.source_unit_name}_{contract.name}", contract.name, self.generate_link(contract))
+            nodes.add(node_tuple)
+
 
         for node in self._contracts:
             node_id = f"{node.parent.source_unit_name}_{node.name}"
-            identifiers: List[ir.Identifier] = [id for id in node.references if isinstance(id, ir.Identifier)]
+
+
+            classified_references = defaultdict(list)
+
+            for reference in node.references:
+                if isinstance(reference, ir.Identifier):
+                    classified_references['Identifier'].append(reference)
+                elif isinstance(reference, ir.IdentifierPathPart):
+                    classified_references['IdentifierPathPart'].append(reference)
+                elif isinstance(reference, ir.MemberAccess):
+                    classified_references['MemberAccess'].append(reference)
+
+            identifiers: List[ir.Identifier] = classified_references['Identifier']
+            identifier_path_parts: List[ir.IdentifierPathPart] = classified_references['IdentifierPathPart']
+            member_accesses: List[ir.MemberAccess] = classified_references['MemberAccess']
+            # print(len(member_accesses))
+
             for id in identifiers:
                 if isinstance(id, ir.ExpressionAbc) and id.statement is not None: # reference is ExpressionAbc and statement is not none
                     current_node: ir.ExpressionAbc = id
-                    if isinstance(current_node.statement.declaration.parent, ir.ContractDefinition): # and parent is 
+                    if isinstance(current_node.statement.declaration.parent, ir.ContractDefinition): 
                         refer_contract:  ir.ContractDefinition = current_node.statement.declaration.parent
                         edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
                         if edge_id not in edges:
                             edges.add(edge_id)
                 else:
                     current_node: ir.SolidityAbc = id
-                    while current_node is not None:
-                        if isinstance(current_node, ir.ContractDefinition):
-                            refer_contract:ir.ContractDefinition = current_node
-                            edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
-                            if edge_id not in edges:
-                                edges.add(edge_id)
-                            break
-                        if isinstance(current_node, ir.SourceUnit): # reference is not in the contract
-                            break
-                        current_node = current_node.parent
-
-
-            identifier_paths : List[ir.IdentifierPathPart] = [id for id in node.references if isinstance(id, ir.IdentifierPathPart)]
-            for pp in identifier_paths:
-                current_node: ir.SolidityAbc = pp.underlying_node # always it is not ExpressionAbc
-                while current_node is not None:
-                    if isinstance(current_node, ir.ContractDefinition):
-                        refer_contract:ir.ContractDefinition = current_node
+                    refer_contract = self.find_ContractDefinition(current_node)
+                    if refer_contract is not None:
                         edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
-                        if edge_id not in edges:
-                            edges.add(edge_id)
-                        # g.edge(f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
-                        # print(contract_def.name)
-                        break
-                    current_node = current_node.parent
+                        edges.add(edge_id)
 
 
-        for from_, to in edges:
-            g.edge(from_, to)
+            for pp in identifier_path_parts:
+                current_node: ir.SolidityAbc = pp.underlying_node # always it is not ExpressionAbc
+                refer_contract = self.find_ContractDefinition(current_node)
+                if refer_contract is not None:
+                    edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
+                    edges.add(edge_id)
+
+            # for ma in member_accesses:
+            #     if isinstance(ma, ir.ExpressionAbc) and ma.statement is not None:
+            #         current_node: ir.ExpressionAbc = ma
+            #         if isinstance(current_node.statement.declaration.parent, ir.ContractDefinition):
+            #             refer_contract:  ir.ContractDefinition = current_node.statement.declaration.parent
+            #             edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
+            #             if edge_id not in edges:
+            #                 edges.add(edge_id)
+            #     else:
+            #         current_node: ir.SolidityAbc = ma
+            #         refer_contract = self.find_ContractDefinition(current_node)
+            #         if refer_contract is not None:
+            #             edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
+            #             edges.add(edge_id) 
+
+        # table.add_column("Referenced By", justify="left")
                     
-        p = self._out / "contract-cross-reference-graph.dot"
-        if not self._force and p.exists():
-            self.logger.warning(f"File {p} already exists, skipping")
-            return
-        g.save(p)
+
+        print(" referring tree")
+      
+        for node in nodes:
+            referring_tree = Tree(
+                f"[link={node[2]}]{node[1]}[/link]"
+            )
+            for from_, to in edges:
+                if node[0] == from_:
+                    for to_node in nodes:
+                        if to_node[0] == to:
+                            referring_tree.add(f"[link={to_node[2]}]{to_node[1]}[/link]")
+            
+            print(referring_tree)
+
+        print("")
+        print(" referrer tree")
+        for node in nodes:
+            referrer_tree = Tree(
+                f"[link={node[2]}]{node[1]}[/link]"
+            )
+            for from_, to in edges:
+                if node[0] == to:
+                    for to_node in nodes:
+                        if to_node[0] == from_:
+                            referrer_tree.add(f"[link={to_node[2]}]{to_node[1]}[/link]")
+            
+            print(referrer_tree)
+
+
+     
 
         
 
     def visit_contract_definition(self, node:ir.ContractDefinition):
         self._contracts.append(node)
     
+    @printer.command(name="contract-cross-reference")
     @click.option(
-        "--force",
-        "-f",
-        is_flag=True,
-        default=False,
-        help="Overwrite existing files",
-    )
-    @click.option(
-        "-o",
-        "--out",
-        is_flag=False,
-        default=".wake/contract-cross-reference-graphs",
-        type=click.Path(file_okay=False, dir_okay=True, writable=True),
-        help="Output directory",
-    )
-    @click.option(
-        "--direction",
-        type=click.Choice(["LR", "TB", "BT", "RL"]),
-        default="TB",
-        help="Graph direction",
+        "--name",
+        "-n",
+        "names",
+        type=SolidityName("contract", case_sensitive=False),
+        multiple=True,
+        help="Contract names",
     )
 
-    @printer.command(name="contract-cross-reference")
+    @click.option(
+        "--inherit",
+        is_flag=True,
+        default=False,
+        help="Include inheritance in cross-reference graph.",
+    )
     def cli(
         self,
-        out: str,
-        # names: Tuple[str, ...],
-        # out: str,
-        # direction: str,
-        # links: bool,
-        # force: bool,
-        direction: str,
-        # children: bool,
-        
-        force: bool,
-        # parents: bool,
-        # interfaces: bool,
-        # single_file: bool,visit_identifier_path
+        names: Tuple[str, ...],
+        inherit
     ) -> None:
         """
         print contract reference relationship.
         """
-        self._direction = direction
-        self._force = force
-        self._out = Path(out).resolve()
-        self._out.mkdir(parents=True, exist_ok=True)
-        # self._names = set(names)
+        self._names = set(names)
+        self._inherit = inherit
 

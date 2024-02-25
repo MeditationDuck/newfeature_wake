@@ -41,9 +41,6 @@ class ContractCrossReferenceGraphPrinter(Printer):
 
 
     def print(self) -> None:   
-
-        for name in self._names:
-            print(name)
             
         import graphviz as gv
 
@@ -274,5 +271,3 @@ class ContractCrossReferenceGraphPrinter(Printer):
         self._single_file = single_file
         self._referrer = referrer
         self._referring = referring
-
-
