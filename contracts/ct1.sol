@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.20;
+import "./foreign_call.sol";
+import "./erc20.sol";
 
 // Simplified ERC-20 interface
 // interface IERC20 {
@@ -9,29 +11,37 @@ pragma solidity =0.8.20;
 
 // }
 
-contract VulnerableTokenStore {
+contract VulnerableTokenStore 
+{
     mapping(address => uint256) public balances;
-    // IERC20 public token;
+    ERC20 public token;
 
-    // constructor(IERC20 _token) {
-    //     token = _token;
-    // }
+    constructor(ERC20 _token) {
+        token = _token;
+    }
 
-    // // Allow users to deposit tokens into the contract
-    // function deposit(uint256 _amount) public {
-    //     require(token.transferFrom(msg.sender, address(this), _amount), "Transfer failed");
-    //     balances[msg.sender] += _amount;
-    // }
+    // Allow users to deposit tokens into the contract
+    function deposit(uint256 _amount) public {
 
-    // // Withdraw tokens from the contract
-    // function withdraw(uint256 _amount) public {
-    //     require(balances[msg.sender] >= _amount, "Insufficient balance");
-    //     balances[msg.sender] -= _amount;
-    //     // Vulnerable to reentrancy attacks
-    //     require(token.transfer(msg.sender, _amount), "Transfer failed");
-    // }
+        require(token.transferFrom(msg.sender, address(this), _amount), "Transfer failed");
+        balances[msg.sender] += _amount;
+    }
+
+    // Withdraw tokens from the contract
+    function withdraw(uint256 _amount) public {
+        require(balances[msg.sender] >= _amount, "Insufficient balance");
+        balances[msg.sender] -= _amount;
+        // Vulnerable to reentrancy attacks
+        require(token.transfer(msg.sender, _amount), "Transfer failed");
+    }
 
     function change(address ad) external{
         balances[ad] = 0;
     }
+
+    function returning(address ad) external {
+        ReferContract a = ReferContract(ad);
+        a.call_foreign_function(msg.sender);
+    }
+
 }

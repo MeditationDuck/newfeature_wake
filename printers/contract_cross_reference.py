@@ -1,19 +1,23 @@
 from __future__ import annotations
 
-from typing import List, Set, Tuple
+from collections import deque
 from pathlib import Path
+from typing import List, Set, Tuple
 
 import networkx as nx
 import rich_click as click
+from rich import print
+
 import wake.ir as ir
 import wake.ir.types as types
-from rich import print
 from wake.cli import SolidityName
 from wake.printers import Printer, printer
 
+import re
+
 
 class ContractCrossReferencePrinter(Printer):
-    _names: Set[str]
+    # _names: Set[str]
     _out: Path
     _direction: str
     _links: bool
@@ -23,140 +27,169 @@ class ContractCrossReferencePrinter(Printer):
     _parents: bool
     _interfaces: bool
     _contracts: List[ir.ContractDefinition]
-    _function_calls: List[ir.FunctionCall]
+    # _references: Dict[str, ]
+    # _function_calls: List[ir.FunctionCall]
 
-    _import_directives: List[ir.ImportDirective]
+    # _import_directives: List[ir.ImportDirective]
+    # _visit_identifier_path: List[ir.IdentifierPath]
 
     def __init__(self):
         self._contracts = []
-        self._function_calls = []
-        self._import_directives = []
-
 
 
     def print(self) -> None:
-        print("")
-        print("contracts list -----------------")
-        for contract in self._contracts:
-            # print("printing")
-            print(contract.name)
+
+        for node in self._contracts:
+            print("-------------------")
+            print(node.name)
+            identifiers: List[ir.Identifier] = [id for id in node.references if isinstance(id, ir.Identifier)]
+
+            for id in identifiers:
+                if isinstance(id, ir.ExpressionAbc) and id.statement is not None: # reference is ExpressionAbc and statement is not none
+                    current_node: ir.ExpressionAbc = id
+                        # print(current_node.statement.declaration.parent)
+                    if isinstance(current_node.statement.declaration.parent, ir.ContractDefinition):
+                        print(current_node.statement.declaration.parent.name)
+                    # else:
+                        # print("the function is not in the contract ... skip")
+                else:
+                    current_node: ir.SolidityAbc = id
+                    while current_node is not None:
+                        if isinstance(current_node, ir.ContractDefinition):
+                            contract_def:ir.ContractDefinition = current_node
+                            print(contract_def.name)
+                            break
+                        current_node = current_node.parent
+
+
+            identifier_paths : List[ir.IdentifierPathPart] = [id for id in node.references if isinstance(id, ir.IdentifierPathPart)]
+            for pp in identifier_paths:
+                current_node: ir.SolidityAbc = pp.underlying_node # always it is not ExpressionAbc
+                while current_node is not None:
+                    if isinstance(current_node, ir.ContractDefinition):
+                        contract_def:ir.ContractDefinition = current_node
+                        print(contract_def.name)
+                        break
+                    current_node = current_node.parent            
+
+
+
         
-        print("")
-        print("")
-        print("imports----------")
-        for import_directive in self._import_directives:
+        import graphviz as gv
+
+        # if not self._force and self._out.exists():
+        #     self.logger.warning(f"File {self._out} already exists, skipping")
+        #     return
+        
+
+        g = gv.Digraph("Contract cross reference")
+        g.attr(rankdir=self._direction)
+        g.attr("node", shape="box")
+
+        edges: Set[Tuple[str, str]] = set()
+
+        for contract in self._contracts:
+            g.node(f"{contract.parent.source_unit_name}_{contract.name}", contract.name)
+
+        for node in self._contracts:
+            node_id = f"{node.parent.source_unit_name}_{node.name}"
+            identifiers: List[ir.Identifier] = [id for id in node.references if isinstance(id, ir.Identifier)]
+            for id in identifiers:
+                if isinstance(id, ir.ExpressionAbc) and id.statement is not None: # reference is ExpressionAbc and statement is not none
+                    current_node: ir.ExpressionAbc = id
+                    if isinstance(current_node.statement.declaration.parent, ir.ContractDefinition): # and parent is 
+                        refer_contract:  ir.ContractDefinition = current_node.statement.declaration.parent
+                        edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
+                        if edge_id not in edges:
+                            edges.add(edge_id)
+                else:
+                    current_node: ir.SolidityAbc = id
+                    while current_node is not None:
+                        if isinstance(current_node, ir.ContractDefinition):
+                            refer_contract:ir.ContractDefinition = current_node
+                            edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
+                            if edge_id not in edges:
+                                edges.add(edge_id)
+                            break
+                        if isinstance(current_node, ir.SourceUnit): # reference is not in the contract
+                            break
+                        current_node = current_node.parent
 
 
-            source_contracts: Tuple[ir.ContractDefinition,...] = import_directive.source_unit.contracts
-            if len(source_contracts) > 0:
-                print("SOURCE CONTRACTS")
-                for source_contract in source_contracts:
-                    print(source_contract.name)
-
-            print("at least one of them import this file")
-
-            print("file name: ", import_directive.imported_source_unit_name)
-            # do same here print all contract name
-            # Assuming 'imported_source_unit' has a similar structure to 'source_unit'
-            imported_contracts: Tuple[ir.ContractDefinition,...] = import_directive.imported_source_unit.contracts
-            if len(imported_contracts) > 0:
-                print("IMPORTED CONTRACTS")
-                for imported_contract in imported_contracts:
-                    print(imported_contract.name)
+            identifier_paths : List[ir.IdentifierPathPart] = [id for id in node.references if isinstance(id, ir.IdentifierPathPart)]
+            for pp in identifier_paths:
+                current_node: ir.SolidityAbc = pp.underlying_node # always it is not ExpressionAbc
+                while current_node is not None:
+                    if isinstance(current_node, ir.ContractDefinition):
+                        refer_contract:ir.ContractDefinition = current_node
+                        edge_id = (f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
+                        if edge_id not in edges:
+                            edges.add(edge_id)
+                        # g.edge(f"{refer_contract.source_unit.source_unit_name}_{refer_contract.name}", node_id)
+                        # print(contract_def.name)
+                        break
+                    current_node = current_node.parent
 
 
-        print("")
-        print("function calls--------------")
-        for fc in self._function_calls:
-            print("--------")
-            print(fc.kind)        
-            print("This function is called: ",fc.expression.parent.source)
-            
-            # print(fc.expression.parent.source_unit.contracts)
+        for from_, to in edges:
+            g.edge(from_, to)
+                    
+        p = self._out / "contract-cross-reference-graph.dot"
+        if not self._force and p.exists():
+            self.logger.warning(f"File {p} already exists, skipping")
+            return
+        g.save(p)
 
-            # print(fc.expression.parent.parent.source)
-            # print(fc.expression.parent.parent.parent.source)
-            print("In this function: ", fc.expression.statement.declaration.canonical_name)
-            # print(fc.expression.statement.declaration.parent)
-
-            sourceontractDefinition: ir.ContractDefinition = fc.expression.statement.declaration.parent
-            print("In this contract: ", sourceontractDefinition.name)
-
-
-            # print(fc.expression.statement.declaration.declaration_string)
-            # print(fc.function_called)
-            # print(fc.expression.source_unit.contracts)
-            # print(fc.expression.parent.source_unit)
-            
-            # print(fc.expression.parent.source_unit.contracts)
-            # parent_contracts: Tuple[ir.ContractDefinition,...] = fc.expression.parent.source_unit.contracts
-
-            print("Type Identifier: ", fc.type_identifier)
-
-            # parent_contracts: List[ir.ContractDefinition] =   fc.source_unit.contracts
-
-            # if len(parent_contracts) > 0:
-            #     print("PARENT")
-            #     for parent_contract in parent_contracts:
-            #         print(parent_contract.name)
-
-
-
-        pass
+        
 
     def visit_contract_definition(self, node:ir.ContractDefinition):
         self._contracts.append(node)
-
-    def visit_function_call(self, node: ir.FunctionCall):
-        self._function_calls.append(node)
-
-    def visit_identifier(self, node: ir.Identifier):
-        # print(node)
-        pass
-
-    def visit_function_definition(self, node: ir.FunctionDefinition):
-        print("--Function Definition--------")
-        print(node.name)
-        # print(node.child_functions)
-        # print(node.)
-        pass
-
-    def visit_import_directive(self, node: ir.ImportDirective):
-        self._import_directives.append(node)
-
-
-        
-
-        # print("-----")
-        # parent_contracts: Tuple[ir.ContractDefinition, ...] = node.parent.contracts
-
-        # # print(parent_contracts[0].name)
-        # for pa_contract in parent_contracts:
-        #     print(pa_contract)
-        # # print(node.imported_source_unit.contracts)
-        # source: Tuple[ir.ContractDefinition, ...]= node.imported_source_unit.contracts[0]
-        # # print(node.import_string_location)
-        # for so_contract in source:  
-        #     print(so_contract.name)
-        pass
-
-        
+    
+    @click.option(
+        "--force",
+        "-f",
+        is_flag=True,
+        default=False,
+        help="Overwrite existing files",
+    )
+    @click.option(
+        "-o",
+        "--out",
+        is_flag=False,
+        default=".wake/contract-cross-reference-graphs",
+        type=click.Path(file_okay=False, dir_okay=True, writable=True),
+        help="Output directory",
+    )
+    @click.option(
+        "--direction",
+        type=click.Choice(["LR", "TB", "BT", "RL"]),
+        default="TB",
+        help="Graph direction",
+    )
 
     @printer.command(name="contract-cross-reference")
     def cli(
         self,
+        out: str,
         # names: Tuple[str, ...],
         # out: str,
         # direction: str,
         # links: bool,
         # force: bool,
+        direction: str,
         # children: bool,
+        
+        force: bool,
         # parents: bool,
         # interfaces: bool,
-        # single_file: bool,
+        # single_file: bool,visit_identifier_path
     ) -> None:
         """
         print contract reference relationship.
         """
+        self._direction = direction
+        self._force = force
+        self._out = Path(out).resolve()
+        self._out.mkdir(parents=True, exist_ok=True)
         # self._names = set(names)
 

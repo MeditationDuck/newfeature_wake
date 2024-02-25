@@ -1,1 +1,2 @@
 from .contract_cross_reference import ContractCrossReferencePrinter
+from .contract_cross_reference_graph import ContractCrossReferenceGraphPrinter
