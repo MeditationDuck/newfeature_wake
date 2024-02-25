@@ -175,10 +175,6 @@ class ContractCrossReferencePrinter(Printer):
                             referrer_tree.add(f"[link={to_node[2]}]{to_node[1]}[/link]")
             
             print(referrer_tree)
-
-
-     
-
         
 
     def visit_contract_definition(self, node:ir.ContractDefinition):
