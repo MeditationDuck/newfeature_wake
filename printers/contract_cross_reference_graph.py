@@ -24,20 +24,14 @@ class ContractCrossReferenceGraphPrinter(Printer):
     _single_file: bool
     _referrer: bool
     _referring: bool
+
     _contracts: List[ir.ContractDefinition]
-    _edges: Set[Tuple[str, str]]
-
-    # _Cedges: Dict[ir.ContractDefinition, Set[ir.ContractDefinition]]
     _refering_edges: Dict[ir.ContractDefinition, Set[ir.ContractDefinition]]
-    _refered_edges: Dict[ir.ContractDefinition, Set[ir.ContractDefinition]] # can be deleted
+    _refered_edges: Dict[ir.ContractDefinition, Set[ir.ContractDefinition]]
 
-    _nodes: Set[Tuple[str, str, str]]
     
     def __init__(self):
         self._contracts = []
-        self._edges = set()
-        # self._Cedges = {}
-        self._nodes = set()
         self._refering_edges = {}
         self._refered_edges = {}
 
@@ -52,49 +46,26 @@ class ContractCrossReferenceGraphPrinter(Printer):
             node = node.parent
 
     def create_edge(self, source: ir.ContractDefinition, target: ir.ContractDefinition):
-        # make sure source and target are not None and it is contractDefinition.
-        # if source == target:
-        #     return
-        # edge_id = (f"{source.source_unit.source_unit_name}_{source.name}", f"{target.parent.source_unit_name}_{target.name}")
-        # if edge_id not in self._edges:
-        #     self._edges.add(edge_id)
-        
         self._refering_edges[target].add(source)
         self._refered_edges[source].add(target)
-
-
 
     def create_edges(self, source: ir.ContractDefinition, targets: List[ir.ContractDefinition]):
         for target in targets:
             self.create_edge(source, target)
-    
-    def dbg_print_info(self, contract: ir.ContractDefinition) -> None:
-        print(f"{contract.parent.source_unit_name}_{contract.name}", contract.name, self.generate_link(contract))
+
+    def node_name(self, contract: ir.ContractDefinition) -> str:
+        return f"{contract.parent.source_unit_name}_{contract.name}"
 
     def print(self) -> None: 
         import graphviz as gv
         for contract in self._contracts:
 
-            # node_tuple = (f"{contract.parent.source_unit_name}_{contract.name}", contract.name, self.generate_link(contract))
-            # self._nodes.add(node_tuple)
             self._refered_edges[contract] = set()
             self._refering_edges[contract] = set()
 
         for contract in self._contracts:
             children: List[ir.ContractDefinition] = []
             children.append(contract)
-            
-            # print(contract.name, contract.abstract, contract.kind)
-            # # if False:
-
-            # #     current_children: deque[ir.ContractDefinition] = deque(children)
-            # #     while(len(current_children) > 0):
-            # #         current_node = current_children.popleft()
-            # #         new_children = current_node.child_contracts
-            # #         for new_child in new_children:
-            # #             if new_child not in children:
-            # #                 children.append(new_child)
-            # #                 current_children.append(new_child)
                 
             classified_references = defaultdict(list)
             for reference in contract.references:
@@ -165,12 +136,9 @@ class ContractCrossReferenceGraphPrinter(Printer):
                     if in_degree[child_contract] == 0:
                         que.append(child_contract)
 
-            if len(sorted_contracts) != len(self._contracts):
-                raise Exception("Cyclic inheritance")
+            # if len(sorted_contracts) != len(self._contracts):
+            #     raise Exception("Cyclic inheritance")
             
-            for contract in sorted_contracts:
-                print(contract.name)
-
             for contract in sorted_contracts:
                 for child_contract in contract.child_contracts:
                     if isinstance(child_contract, ir.ContractDefinition):
@@ -186,9 +154,7 @@ class ContractCrossReferenceGraphPrinter(Printer):
         if(True):
             ignore_contracts: Set[ir.ContractDefinition] = set()
             for contract in self._contracts:
-                
                 if contract.kind != ContractKind.CONTRACT or contract.abstract:
-                    print(contract.name, contract.abstract)
                     ignore_contracts.add(contract)
             
             for contract in ignore_contracts:   
@@ -197,125 +163,96 @@ class ContractCrossReferenceGraphPrinter(Printer):
                 self._contracts.remove(contract)
 
             for contract in self._contracts:
-                # Create a copy of the set for safe iteration
                 refering_contracts_copy = set(self._refering_edges[contract])
                 for refering_contract in refering_contracts_copy:
                     if refering_contract in ignore_contracts:
                         self._refering_edges[contract].remove(refering_contract)
 
-                # Create a copy of the set for safe iteration
                 refered_contracts_copy = set(self._refered_edges[contract])
                 for refered_contract in refered_contracts_copy:
                     if refered_contract in ignore_contracts:
                         self._refered_edges[contract].remove(refered_contract)
 
-
-        
-        g = gv.Digraph("Contract cross reference")
-        g.attr(rankdir=self._direction)
-        g.attr("node", shape="box")
-        
-        for contract in self._contracts:
-            node_name = f"{contract.parent.source_unit_name}_{contract.name}"
-            g.node(node_name, contract.name, URL=self.generate_link(contract))
-        # for from_, to in self._edges:
-        #     g.edge(from_, to)
-
-        for contract in self._contracts:
-            for refering_edge in self._refering_edges[contract]:
-                g.edge(f"{refering_edge.parent.source_unit_name}_{refering_edge.name}", f"{contract.parent.source_unit_name}_{contract.name}")
-
-            # for refered_edge in self._refered_edges[contract]:
-            #     g.edge(f"{contract.parent.source_unit_name}_{contract.name}", f"{refered_edge.parent.source_unit_name}_{refered_edge.name}")
-
-        p = self._out / "contract-cross-reference-graph.dot"
-        if not self._force and p.exists():
-            self.logger.warning(f"File {p} already exists, skipping")
-            return
-        g.save(p)
-
-        
-        
-
-
-        # if self._single_file and len(self._names) == 0:
-        #     g = gv.Digraph("Contract cross reference")
-        #     g.attr(rankdir=self._direction)
-        #     g.attr("node", shape="box")
+        if self._single_file and len(self._names) == 0:
+            g = gv.Digraph("Contract cross reference")
+            g.attr(rankdir=self._direction)
+            g.attr("node", shape="box")
             
-        #     for v in self._nodes:
-        #         g.node(v[0], v[1], URL=v[2])
-        #     for from_, to in self._edges:
-        #         g.edge(from_, to)
-        #     p = self._out / "contract-cross-reference-graph.dot"
-        #     if not self._force and p.exists():
-        #         self.logger.warning(f"File {p} already exists, skipping")
-        #         return
-        #     g.save(p)
+            for contract in self._contracts:
+                g.node(self.node_name(contract), contract.name, URL=self.generate_link(contract))
 
+            for contract in self._contracts:
+                for refering_edge in self._refering_edges[contract]:
+                    g.edge(self.node_name(refering_edge), self.node_name(contract))
 
+            p = self._out / "contract-cross-reference-graph.dot"
+            if not self._force and p.exists():
+                self.logger.warning(f"File {p} already exists, skipping")
+                return
+            g.save(p)
 
+        elif not self._single_file : #  and len(self._names) != 0 
+            for contract in self._contracts:
+                added_contracts: Set[ir.ContractDefinition] = set()
+                if contract.name not in self._names:
+                    continue
+                g = gv.Digraph("Contract cross reference")
+                g.attr(rankdir=self._direction)
+                g.attr("node", shape="box")
 
+                style="filled"
+                g.node(self.node_name(contract), contract.name, URL=self.generate_link(contract), style=style)
+                if self._referrer: # referrer of given contract thus show contracts are refering to given contract
+                    for refering_contract in self._refering_edges[contract]:
+                        if refering_contract not in added_contracts:
+                            g.node(self.node_name(refering_contract), refering_contract.name, URL=self.generate_link(refering_contract))
+                            added_contracts.add(refering_contract)
+                        g.edge(self.node_name(refering_contract), self.node_name(contract))
+                if self._referring: # referring of given contract i.e. show contracts are refered by given contract
+                    for refered_contract in self._refered_edges[contract]:
+                        if refered_contract not in added_contracts:
+                            g.node(self.node_name(refered_contract), refered_contract.name, URL=self.generate_link(refered_contract))
+                            added_contracts.add(refered_contract)
+                        if not self._referring or contract != refered_contract:  # for self reference, there will two same edge
+                            g.edge(self.node_name(contract), self.node_name(refered_contract))
+                p = self._out / f"contract-cross-reference-graph-{contract.name}.dot"
+                if not self._force and p.exists():
+                    self.logger.warning(f"File {p} already exists, skipping")
+                    continue
+                g.save(p)
 
+        else: # single file and there is names
+            g = gv.Digraph("Contract cross reference")
+            g.attr(rankdir=self._direction)
+            g.attr("node", shape="box")
+            added_contracts: Set[ir.ContractDefinition] = set()
+            added_edges = set()
+            for contract in self._contracts:
+                if contract.name in self._names: # only for names distingish by the name of contract
+                    g.node(self.node_name(contract), contract.name, URL=self.generate_link(contract), style="filled")
+                    added_contracts.add(contract)
+            for contract in self._contracts:
+                if contract.name in self._names: # only for names distingish by the name of contract
+                   
+                    if self._referrer:
+                        for refering_contract in self._refering_edges[contract]:
+                            if refering_contract not in added_contracts:
+                                g.node(self.node_name(refering_contract), refering_contract.name, URL=self.generate_link(refering_contract))
+                                added_contracts.add(refering_contract)
+                            g.edge(self.node_name(refering_contract), self.node_name(contract))
 
-        # elif not self._single_file:
-        #     for contract in self._nodes:
-        #         if contract[1] not in self._names:
-        #             continue
-        #         g = gv.Digraph("Contract cross reference")
-        #         g.attr(rankdir=self._direction)
-        #         g.attr("node", shape="box")
-        #         added_nodes = set()
-
-        #         style="filled"
-        #         g.node(contract[0], contract[1], URL=contract[2], style=style)
-        #         added_nodes.add(contract[0])
-
-        #         for edge in self._edges:
-        #             source, target = edge[0], edge[1]
-        #             if (self._referrer and target == contract[0]) or (self._referring and source == contract[0]):
-        #                 for node_id, ct_name, url in self._nodes:
-        #                     if (node_id == source  or node_id == target) and node_id not in added_nodes:
-        #                         g.node(node_id, ct_name, URL=url)
-        #                         added_nodes.add(node_id)
-        #                 if source in added_nodes and target in added_nodes:
-        #                     g.edge(source, target)
-
-        #         p = self._out / f"contract-cross-reference-graph-{contract[1]}.dot"
-        #         if not self._force and p.exists():
-        #             self.logger.warning(f"File {p} already exists, skipping")
-        #             continue
-        #         g.save(p)
-        # else: # single file and there is names
-        #     g = gv.Digraph("Contract cross reference")
-        #     g.attr(rankdir=self._direction)
-        #     g.attr("node", shape="box")
-        #     added_nodes = set()
-        #     for contract in self._nodes:
-        #         if contract[1] not in self._names: # only for names distingish by the name of contract
-        #             continue
-                
-        #         if contract[0] not in added_nodes: # generally distingish by the id 
-        #             style="filled"
-        #             g.node(contract[0], contract[1], URL=contract[2], style=style)
-        #             added_nodes.add(contract[0])
-
-        #         for edge in self._edges:
-        #             source, target = edge[0], edge[1]
-        #             if (self._referrer and target == contract[0]) or (self._referring and source == contract[0]):
-        #                 for node_id, ct_name, url in self._nodes:
-        #                     if (node_id == source  or node_id == target) and node_id not in added_nodes:
-        #                         style = "filled" if ct_name in self._names else ""
-        #                         g.node(node_id, ct_name, URL=url, style=style)
-        #                         added_nodes.add(node_id)
-        #                 if source in added_nodes and target in added_nodes:
-        #                     g.edge(source, target)
-        #     p = self._out / "contract-cross-reference-graph.dot"
-        #     if not self._force and p.exists():
-        #         self.logger.warning(f"File {p} already exists, skipping")
-        #         return
-        #     g.save(p)
-                
+                    if self._referring:
+                        for refered_contract in self._refered_edges[contract]:
+                            if refered_contract not in added_contracts:
+                                g.node(self.node_name(refered_contract), refered_contract.name, URL=self.generate_link(refered_contract))
+                                added_contracts.add(refered_contract)
+                            if not self._referring or contract != refered_contract: # for self reference, there will two same edge
+                                g.edge(self.node_name(contract), self.node_name(refered_contract))
+            p = self._out / "contract-cross-reference-graph.dot"
+            if not self._force and p.exists():
+                self.logger.warning(f"File {p} already exists, skipping")
+                return
+            g.save(p)
 
     def visit_contract_definition(self, node:ir.ContractDefinition):
         self._contracts.append(node)

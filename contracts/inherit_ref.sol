@@ -2,10 +2,6 @@
 pragma solidity =0.8.20;
 
 
-interface IERC {
-    // Foo c;
-    function foo(address ad) external;
-}
 
 
 abstract contract AbstractContract {
@@ -20,6 +16,12 @@ contract InheritFromAbstract is AbstractContract {
     }
 }
 
+interface IERC {
+    // Foo c;
+    function foo(address ad) external;
+}
+
+
 contract Foo {
     IERC a;
 
@@ -31,33 +33,20 @@ contract Foo {
     function control_our_contract(address ad) external{
         k = Foo(ad);
     }
+    erc c;
 }
 
 contract ERC is IERC {
     uint ab;
     function foo(address ad) external override {
-        ab = 0;
-
-        ab += ab;
+     
 
     }
 }
 
-contract ercc is ERC {
-  constructor() {
-
-  }
-}
-
-contract eccc is ERC {
-     constructor() {
-    
-  }
+contract erc is ERC {
 
 }
 
-contract abcd is ERC, eccc {
-     constructor() {
-    
-  }
+contract ERCerc is ERC, erc {
 }
